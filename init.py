@@ -1,6 +1,6 @@
 import os
 
-def run():
+def setup():
     if not os.path.isdir('data'):
         os.mkdir('data')
 
