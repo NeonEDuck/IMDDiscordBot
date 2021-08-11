@@ -4,8 +4,7 @@ from discord_slash import cog_ext
 from discord_slash.utils.manage_commands import create_option, create_choice
 from discord_slash.utils.manage_components import create_select, create_select_option, create_actionrow
 from discord_slash.context import ComponentContext
-import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from data_manager import DataManager as data
 
 class Vote(commands.Cog):
@@ -21,7 +20,7 @@ class Vote(commands.Cog):
                 if vote_info['closed'] or vote_info['close_date'] == None:
                     continue
 
-                if datetime.now() > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
+                if (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                     vote_info['closed'] = True
                     vote_info['forced'] = False
                     data.set_vote(title, vote_info)
@@ -254,7 +253,7 @@ class Vote(commands.Cog):
                 except ValueError:
                     await ctx.send(f'時間格式錯誤：YYYY/MM/DD HH:MM', hidden=True)
                     return
-            elif vote_info['close_date'] and datetime.now() > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
+            elif vote_info['close_date'] and (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                 vote_info['close_date'] = None
 
             data.set_vote(title, vote_info)
