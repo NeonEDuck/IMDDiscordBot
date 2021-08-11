@@ -254,7 +254,7 @@ class Vote(commands.Cog):
                 except ValueError:
                     await ctx.send(f'時間格式錯誤：YYYY/MM/DD HH:MM', hidden=True)
                     return
-            elif datetime.now() > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
+            elif vote_info['close_date'] and datetime.now() > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                 vote_info['close_date'] = None
 
             data.set_vote(title, vote_info)
