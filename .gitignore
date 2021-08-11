@@ -8,3 +8,6 @@ __pycache__/
 
 # Data
 data/
+
+# Replit
+poetry.lock
