@@ -8,13 +8,15 @@ import init
 import error_handler
 import app
 
-bot = commands.Bot(command_prefix='/')
+intents = discord.Intents.default()
+intents.members = True
+bot = commands.Bot(intents=intents, command_prefix='imd/')
 slash = SlashCommand(bot, sync_commands=True)
 extensions = ['cogs.vote']
 
 @slash.slash(name='ping')
 async def _ping(ctx):
-    await ctx.send(f'Pong! ({bot.latency*1000}ms)')
+    await ctx.send(f'Pong! ({bot.latency*1000}ms)', hidden=True)
 
 if __name__ == '__main__':
     init.setup()
