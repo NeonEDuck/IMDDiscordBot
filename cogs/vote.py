@@ -4,7 +4,8 @@ from discord_slash import cog_ext
 from discord_slash.utils.manage_commands import create_option, create_choice
 from discord_slash.utils.manage_components import create_select, create_select_option, create_actionrow
 from discord_slash.context import ComponentContext
-from datetime import datetime, timezone, timedelta
+from typing import Union
+from datetime import datetime, timedelta
 from data_manager import DataManager as data
 
 class Vote(commands.Cog):
@@ -15,16 +16,16 @@ class Vote(commands.Cog):
     @tasks.loop(seconds=1.0)
     async def vote_closer(self):
         if self.bot.is_ready():
-            for title in data.vote_keys():
-                vote_info = data.get_vote(title)
+            for guild_id, title in data.vote_all_keys():
+                vote_info = data.get_vote(title, guild_id)
                 if vote_info['closed'] or vote_info['close_date'] == None:
                     continue
 
                 if (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                     vote_info['closed'] = True
                     vote_info['forced'] = False
-                    data.set_vote(title, vote_info)
-                    await self.vote_update(self.bot, title)
+                    data.set_vote(title, vote_info, guild_id)
+                    await self.vote_update(self.bot, title, guild_id)
     
     vote_add_kwargs = {
         'base': 'vote',
@@ -54,12 +55,18 @@ class Vote(commands.Cog):
                 description='一人最多能投幾票。(預設為1)',
                 option_type=4,
                 required=False
+            ),
+            create_option(
+                name='show_members',
+                description='是否在投票選項上顯示成員的選擇。(預設為False)',
+                option_type=5,
+                required=False
             )
         ]
     }
     @cog_ext.cog_subcommand(**vote_add_kwargs)
-    async def _vote_add(self, ctx, title:str, options:str, close_date:str=None, max_votes:int=1):
-        vote_info = data.get_vote(title)
+    async def _vote_add(self, ctx, title:str, options:str, close_date:str=None, max_votes:int=1, show_members:bool=False):
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             await ctx.send(f'投票「{title}」已經存在!', hidden=True)
@@ -77,6 +84,7 @@ class Vote(commands.Cog):
                 'options': [{"name":x.strip(),"votes":0} for x in options.split('|')],
                 'close_date': close_date,
                 'max_votes': max_votes,
+                'show_members': show_members,
                 'voted': {},
                 'closed': False,
                 'forced': False
@@ -88,7 +96,7 @@ class Vote(commands.Cog):
 
             vote_info['vote_msgs'] = [str(vote_msg.id)]
 
-            data.set_vote(title, vote_info)
+            data.set_vote(title, vote_info, ctx.guild_id)
 
     vote_remove_kwargs = {
         'base': 'vote',
@@ -105,15 +113,15 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_remove_kwargs)
     async def _vote_remove(self, ctx, title:str):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
-            for msgID in vote_info['vote_msgs']:
-                msg = await ctx.channel.fetch_message(msgID)
+            for msg_id in vote_info['vote_msgs']:
+                msg = await ctx.channel.fetch_message(msg_id)
                 if msg:
                     await msg.delete()
 
-            data.delete_vote(title)
+            data.delete_vote(title, ctx.guild_id)
             await ctx.send(f'以成功將投票「{title}」刪除!', hidden=True)
         else:
             await ctx.send(f'投票「{title}」並不存在!', hidden=True)
@@ -140,15 +148,16 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_edit_title_kwargs)
     async def _vote_edit_title(self, ctx, old_title:str, new_title:str):
-        vote_info = data.get_vote(old_title)
+        vote_info = data.get_vote(old_title, ctx.guild_id)
 
         if not vote_info:
             await ctx.send(f'投票「{old_title}」並不存在!', hidden=True)
-        elif data.get_vote(new_title):
+        elif data.get_vote(new_title, ctx.guild_id):
             await ctx.send(f'投票「{new_title}」已經存在，無法取代!', hidden=True)
         else:
-            data.set_vote(new_title, vote_info)
-            data.delete_vote(old_title)
+            data.set_vote(new_title, vote_info, ctx.guild_id)
+            data.delete_vote(old_title, ctx.guild_id)
+            await self.vote_update(ctx, new_title, ctx.guild_id)
             await ctx.send(f'以成功將投票「{old_title}」名字編輯成「{new_title}」!', hidden=True)
 
     vote_edit_option_kwargs = {
@@ -179,7 +188,7 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_edit_option_kwargs)
     async def _vote_edit_option(self, ctx, title:str, opt_idx:int, new_name:str):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             if opt_idx < 0 or opt_idx >= len(vote_info["options"]):
@@ -188,7 +197,8 @@ class Vote(commands.Cog):
 
             vote_info["options"][opt_idx]["name"] = new_name
 
-            data.set_vote(title, vote_info)
+            data.set_vote(title, vote_info, ctx.guild_id)
+            await self.vote_update(ctx, title, ctx.guild_id)
             await ctx.send(f'以成功將投票「{title}」選項{opt_idx}編輯成「{new_name}」!', hidden=True)
         else:
             await ctx.send(f'投票「{title}」並不存在!', hidden=True)
@@ -208,14 +218,14 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_close_kwargs)
     async def _vote_close(self, ctx, title:str, close_date:str=None):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             vote_info['closed'] = True
             vote_info['forced'] = True
 
-            data.set_vote(title, vote_info)
-            await self.vote_update(ctx, title)
+            data.set_vote(title, vote_info, ctx.guild_id)
+            await self.vote_update(ctx, title, ctx.guild_id)
             await ctx.send(f'以將投票「{title}」關閉!', hidden=True)
         else:
             await ctx.send(f'投票「{title}」並不存在!', hidden=True)
@@ -241,7 +251,7 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_open_kwargs)
     async def _vote_open(self, ctx, title:str, close_date:str=None):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             vote_info['closed'] = False
@@ -256,14 +266,15 @@ class Vote(commands.Cog):
             elif vote_info['close_date'] and (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                 vote_info['close_date'] = None
 
-            data.set_vote(title, vote_info)
-            await self.vote_update(ctx, title)
+            data.set_vote(title, vote_info, ctx.guild_id)
+            await self.vote_update(ctx, title, ctx.guild_id)
             await ctx.send(f'以將投票「{title}」開啟!', hidden=True)
         else:
             await ctx.send(f'投票「{title}」並不存在!', hidden=True)
 
-    vote_list_kwargs = {
+    vote_show_list_kwargs = {
         'base': 'vote',
+        'subcommand_group': 'show',
         'name': 'list',
         'description': '以條件篩選並顯示投票。',
         'options': [
@@ -289,17 +300,50 @@ class Vote(commands.Cog):
             )
         ]
     }
-    @cog_ext.cog_subcommand(**vote_list_kwargs)
-    async def _vote_list(self, ctx, state:str='all'):
+    @cog_ext.cog_subcommand(**vote_show_list_kwargs)
+    async def _vote_show_list(self, ctx, state:str='all'):
         matchs = []
-        for title in data.vote_keys():
-            vote_info = data.get_vote(title)
+        for title in data.vote_keys(ctx.guild_id):
+            vote_info = data.get_vote(title, ctx.guild_id)
             if (vote_info['closed'] and state == 'open') or (not vote_info['closed'] and state == 'close'):
                 continue
             
             matchs.append(title)
         
         await ctx.send('符合條件的投票：\n'+ ',\n'.join([title for title in matchs]) if matchs else '沒有符合條件的投票:(', hidden=True)
+
+    vote_show_result_kwargs = {
+        'base': 'vote',
+        'subcommand_group': 'show',
+        'name': 'result',
+        'description': '顯示指定投票結果。',
+        'options': [
+            create_option(
+                name='title',
+                description='投票標題。',
+                option_type=3,
+                required=True
+            )
+        ]
+    }
+    @cog_ext.cog_subcommand(**vote_show_result_kwargs)
+    async def _vote_show_result(self, ctx, title:str):
+        vote_info = data.get_vote(title, ctx.guild_id)
+
+        if vote_info:
+            embed=discord.Embed(title=f'「{title}」', color=0x07A0C3)
+            embed.set_author(name='投票結果')
+            members_list = []
+            options_list = []
+            for i, opt in enumerate(vote_info['options']):
+                voted_members = [member_id for member_id in vote_info['voted'].keys() if str(i) in vote_info['voted'][member_id]]
+
+                if not voted_members:
+                    continue
+                
+                embed.add_field(name=opt['name'], value=' '.join([f'<@{member_id}>' for member_id in voted_members]), inline=False)
+
+            await ctx.send(embed=embed, hidden=True)
 
     vote_jumpto_kwargs = {
         'base': 'vote',
@@ -322,13 +366,13 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_jumpto_kwargs)
     async def _vote_jumpto(self, ctx, title:str, public:bool=False):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             for channel in await ctx.guild.fetch_channels():
-                for msgID in vote_info['vote_msgs'][::-1]:
+                for msg_id in vote_info['vote_msgs'][::-1]:
                     try:
-                        msg = await channel.fetch_message(msgID)
+                        msg = await channel.fetch_message(msg_id)
                         await ctx.send(f'[點此跳至投票「{title}」]({msg.jump_url})', hidden=not public)
                         break
                     except:
@@ -362,7 +406,7 @@ class Vote(commands.Cog):
     }
     @cog_ext.cog_subcommand(**vote_notify_kwargs)
     async def _vote_notify(self, ctx, title:str, public:bool=False):
-        vote_info = data.get_vote(title)
+        vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             members = ' '.join([ f'<@{member.id}>' for member in ctx.guild.members if str(member.id) not in vote_info['voted'] and member != self.bot.user ])
@@ -373,8 +417,8 @@ class Vote(commands.Cog):
         else:
             await ctx.send(f'投票「{title}」並不存在!', hidden=True)
 
-    async def vote_update(self, ctx, title:str):
-        vote_info = data.get_vote(title)
+    async def vote_update(self, ctx, title:str, guild_id:Union[str, int]):
+        vote_info = data.get_vote(title, guild_id)
 
         if vote_info:
             embed = make_embed(title, vote_info)
@@ -383,20 +427,20 @@ class Vote(commands.Cog):
             if ctx is None or type(ctx) == commands.Bot:
                 # search in guilds
 
-                tmp_msgID_list = vote_info['vote_msgs']
+                tmp_msg_id_list = vote_info['vote_msgs']
                 for guild in ctx.guilds:
                     for channel in await guild.fetch_channels():
-                        if not tmp_msgID_list:
+                        if not tmp_msg_id_list:
                             break
-                        edited_msgID_list = []
-                        for msgID in tmp_msgID_list:
+                        edited_msg_id_list = []
+                        for msg_id in tmp_msg_id_list:
                             try:
-                                msg = await channel.fetch_message(msgID)
+                                msg = await channel.fetch_message(msg_id)
                                 await msg.edit(embed=embed, components=[select])
-                                edited_msgID_list.append(msgID)
+                                edited_msg_id_list.append(msg_id)
                             except:
                                 pass
-                        tmp_msgID_list = [ msgID for msgID in tmp_msgID_list if msgID not in edited_msgID_list ]
+                        tmp_msg_id_list = [ msg_id for msg_id in tmp_msg_id_list if msg_id not in edited_msg_id_list ]
                     else:
                         continue
                     break
@@ -406,9 +450,9 @@ class Vote(commands.Cog):
                 if type(ctx) == ComponentContext:
                     ctx = ctx.origin_message
 
-                for msgID in vote_info['vote_msgs']:
+                for msg_id in vote_info['vote_msgs']:
                     try:
-                        msg = await ctx.channel.fetch_message(msgID)
+                        msg = await ctx.channel.fetch_message(msg_id)
                         await msg.edit(embed=embed, components=[select])
                     except Exception as e:
                         print(e)
@@ -417,8 +461,8 @@ class Vote(commands.Cog):
 
     @cog_ext.cog_component()
     async def vote_select(self, ctx: ComponentContext):
-        for title in data.vote_keys():
-            vote_info = data.get_vote(title)
+        for title in data.vote_keys(ctx.guild_id):
+            vote_info = data.get_vote(title, ctx.guild_id)
             if str(ctx.origin_message_id) in vote_info['vote_msgs']:
                 if vote_info['closed']:
                     raise PermissionError
@@ -432,8 +476,8 @@ class Vote(commands.Cog):
                 for i in vote_info['voted'][str(ctx.author_id)]:
                     vote_info['options'][int(i)]["votes"] += 1
 
-                data.set_vote(title, vote_info)
-                await self.vote_update(ctx, title)
+                data.set_vote(title, vote_info, ctx.guild_id)
+                await self.vote_update(ctx, title, ctx.guild_id)
                 await ctx.send(content=f"投票成功！\n你投給了：{', '.join([ vote_info['options'][int(i)]['name'] for i in ctx.selected_options ])}", hidden=True)
                 break
         else:
@@ -472,6 +516,9 @@ def make_embed(title:str, vote_info:dict) -> discord.Embed:
     embed.set_author(name='投票')
     for i, opt in enumerate(vote_info['options']):
         value = f"票數：{opt['votes']:3}" + (f'\n{date_text}' if i == len(vote_info['options'])-1 else '')
+        if vote_info['show_members']:
+            value += '\n' + ' '.join([ f'<@{member_id}>' for member_id, votes in vote_info['voted'].items() if str(i) in votes ])
+
         embed.add_field(name=opt['name'], value=value, inline=False)
     embed.set_footer(text='≡'*43 + '\n' + ('投票已結束' if vote_info['closed'] else '點擊下面選單以投票'))
     return embed
