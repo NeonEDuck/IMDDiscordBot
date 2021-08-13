@@ -40,7 +40,7 @@ class Vote(commands.Cog):
             ),
             create_option(
                 name='options',
-                description='投票選項，請使用「 | 」分開各個選項。',
+                description='投票選項，請使用「 | 」分開各個選項。(格式：選項A|選項B)',
                 option_type=3,
                 required=True
             ),
@@ -69,16 +69,18 @@ class Vote(commands.Cog):
         vote_info = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
-            await ctx.send(f'投票「{title}」已經存在!', hidden=True)
+            raise ValueError('vote', f'投票「{title}」」已經存在!')
         else:
             if close_date:
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
-                except ValueError:
-                    await ctx.send(f'時間格式錯誤：YYYY/MM/DD HH:MM', hidden=True)
-                    return
+                except:
+                    raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
 
-            max_votes = max_votes if max_votes > 0 else 1
+            max_votes = 0 if max_votes is None else max_votes
+
+            if max_votes <= 0:
+                raise ValueError('vote', 'max_votes必須為大於等於1的值')
 
             vote_info = {
                 'options': [{"name":x.strip(),"votes":0} for x in options.split('|')],
@@ -124,47 +126,12 @@ class Vote(commands.Cog):
             data.delete_vote(title, ctx.guild_id)
             await ctx.send(f'以成功將投票「{title}」刪除!', hidden=True)
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
-    vote_edit_title_kwargs = {
+    vote_edit_kwargs = {
         'base': 'vote',
-        'subcommand_group': 'edit',
-        'name': 'title',
-        'description': '編輯指定投票的名字。',
-        'options': [
-            create_option(
-                name='old_title',
-                description='舊投票標題。',
-                option_type=3,
-                required=True
-            ),
-            create_option(
-                name='new_title',
-                description='新投票標題。',
-                option_type=3,
-                required=True
-            )
-        ]
-    }
-    @cog_ext.cog_subcommand(**vote_edit_title_kwargs)
-    async def _vote_edit_title(self, ctx, old_title:str, new_title:str):
-        vote_info = data.get_vote(old_title, ctx.guild_id)
-
-        if not vote_info:
-            await ctx.send(f'投票「{old_title}」並不存在!', hidden=True)
-        elif data.get_vote(new_title, ctx.guild_id):
-            await ctx.send(f'投票「{new_title}」已經存在，無法取代!', hidden=True)
-        else:
-            data.set_vote(new_title, vote_info, ctx.guild_id)
-            data.delete_vote(old_title, ctx.guild_id)
-            await self.vote_update(ctx, new_title, ctx.guild_id)
-            await ctx.send(f'以成功將投票「{old_title}」名字編輯成「{new_title}」!', hidden=True)
-
-    vote_edit_option_kwargs = {
-        'base': 'vote',
-        'subcommand_group': 'edit',
-        'name': 'option',
-        'description': '編輯指定投票的選項。',
+        'name': 'edit',
+        'description': '編輯指定投票的設定。',
         'options': [
             create_option(
                 name='title',
@@ -173,35 +140,79 @@ class Vote(commands.Cog):
                 required=True
             ),
             create_option(
-                name='opt_idx',
-                description='投票選項索引。(從0開始)',
-                option_type=4,
-                required=True
+                name='new_title',
+                description='新投票標題。',
+                option_type=3,
+                required=False
             ),
             create_option(
-                name='new_name',
-                description='選項名字。',
+                name='options',
+                description='投票選項，請使用「 | 」分開各個選項，使用「 : 」分開索引與名字。(格式：0:選項A|2:選項C)',
                 option_type=3,
-                required=True
+                required=False
+            ),
+            create_option(
+                name='close_date',
+                description='關閉日期。(格式：YYYY/MM/DD HH:MM)',
+                option_type=3,
+                required=False
+            ),
+            create_option(
+                name='max_votes',
+                description='一人最多能投幾票。',
+                option_type=4,
+                required=False
+            ),
+            create_option(
+                name='show_members',
+                description='是否在投票選項上顯示成員的選擇。',
+                option_type=5,
+                required=False
             )
         ]
     }
-    @cog_ext.cog_subcommand(**vote_edit_option_kwargs)
-    async def _vote_edit_option(self, ctx, title:str, opt_idx:int, new_name:str):
+    @cog_ext.cog_subcommand(**vote_edit_kwargs)
+    async def _vote_edit(self, ctx, title:str, new_title:str=None, options:str=None, close_date:str=None, max_votes:int=None, show_members:bool=None):
         vote_info = data.get_vote(title, ctx.guild_id)
 
-        if vote_info:
-            if opt_idx < 0 or opt_idx >= len(vote_info["options"]):
-                await ctx.send(f'投票「{title}」並沒有第{opt_idx}個選項!', hidden=True)
-                return
-
-            vote_info["options"][opt_idx]["name"] = new_name
-
-            data.set_vote(title, vote_info, ctx.guild_id)
-            await self.vote_update(ctx, title, ctx.guild_id)
-            await ctx.send(f'以成功將投票「{title}」選項{opt_idx}編輯成「{new_name}」!', hidden=True)
+        if not vote_info:
+            raise KeyError('vote', f'投票「{title}」並不存在!')
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            if options:
+                try:
+                    options_list = sorted([(int(i), name) for i, name in [opt.split(':') for opt in options.split('|')]], key=lambda x:x[0])
+                except Exception as ex:
+                    raise ValueError('vote', 'options格式錯誤。(格式：0:選項A|2:選項C)')
+                for i, name in options_list:
+                    if i >= len(vote_info['options']):
+                        vote_info['options'].append({ "name": name, "votes": 0 })
+                    else:
+                        vote_info['options'][i]['name'] = name
+            if close_date:
+                try:
+                    datetime.strptime(close_date, '%Y/%m/%d %H:%M')
+                except:
+                    raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
+                vote_info['close_date'] = close_date
+            if max_votes is not None:
+                if max_votes > 0:
+                    vote_info['max_votes'] = max_votes
+                else:
+                    raise ValueError('vote', 'max_votes必須為大於等於1的值')
+            if show_members is not None:
+                vote_info['show_members'] = show_members
+
+            if new_title:
+                if data.get_vote(new_title, ctx.guild_id):
+                    raise ValueError('vote', f'投票「{new_title}」已經存在，無法取代!')
+                data.set_vote(new_title, vote_info, ctx.guild_id)
+                data.delete_vote(title, ctx.guild_id)
+                await self.vote_update(ctx, new_title, ctx.guild_id)
+                await ctx.send(f'以成功編輯投票「{new_title}」!', hidden=True)
+            else:
+                data.set_vote(title, vote_info, ctx.guild_id)
+                await self.vote_update(ctx, title, ctx.guild_id)
+                await ctx.send(f'以成功編輯投票「{title}」!', hidden=True)
 
     vote_close_kwargs = {
         'base': 'vote',
@@ -228,7 +239,7 @@ class Vote(commands.Cog):
             await self.vote_update(ctx, title, ctx.guild_id)
             await ctx.send(f'以將投票「{title}」關閉!', hidden=True)
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
     vote_open_kwargs = {
         'base': 'vote',
@@ -259,10 +270,9 @@ class Vote(commands.Cog):
             if close_date:
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
-                    vote_info['close_date'] = close_date
-                except ValueError:
-                    await ctx.send(f'時間格式錯誤：YYYY/MM/DD HH:MM', hidden=True)
-                    return
+                except:
+                    raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
+                vote_info['close_date'] = close_date
             elif vote_info['close_date'] and (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
                 vote_info['close_date'] = None
 
@@ -270,7 +280,7 @@ class Vote(commands.Cog):
             await self.vote_update(ctx, title, ctx.guild_id)
             await ctx.send(f'以將投票「{title}」開啟!', hidden=True)
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
     vote_show_list_kwargs = {
         'base': 'vote',
@@ -310,7 +320,7 @@ class Vote(commands.Cog):
             
             matchs.append(title)
         
-        await ctx.send('符合條件的投票：\n'+ ',\n'.join([title for title in matchs]) if matchs else '沒有符合條件的投票:(', hidden=True)
+        await ctx.send('符合條件的投票：\n'+'\n'.join([title for title in matchs]) if matchs else '沒有符合條件的投票:(', hidden=True)
 
     vote_show_result_kwargs = {
         'base': 'vote',
@@ -344,6 +354,8 @@ class Vote(commands.Cog):
                 embed.add_field(name=opt['name'], value=' '.join([f'<@{member_id}>' for member_id in voted_members]), inline=False)
 
             await ctx.send(embed=embed, hidden=True)
+        else:
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
     vote_jumpto_kwargs = {
         'base': 'vote',
@@ -381,9 +393,9 @@ class Vote(commands.Cog):
                     continue
                 break
             else:
-                await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+                raise KeyError('vote', f'投票「{title}」並不存在!')
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
     vote_notify_kwargs = {
         'base': 'vote',
@@ -415,7 +427,7 @@ class Vote(commands.Cog):
             else:
                 await ctx.send('全部成員已經都投過此投票!', hidden=True)
         else:
-            await ctx.send(f'投票「{title}」並不存在!', hidden=True)
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
     async def vote_update(self, ctx, title:str, guild_id:Union[str, int]):
         vote_info = data.get_vote(title, guild_id)
@@ -454,9 +466,10 @@ class Vote(commands.Cog):
                     try:
                         msg = await ctx.channel.fetch_message(msg_id)
                         await msg.edit(embed=embed, components=[select])
-                    except Exception as e:
-                        print(e)
-                        await ctx.send('投票更新異常失敗！請回報問題！', hidden=True)
+                    except:
+                        pass
+        else:
+            raise KeyError('vote', f'投票「{title}」並不存在!')
 
 
     @cog_ext.cog_component()
@@ -465,7 +478,7 @@ class Vote(commands.Cog):
             vote_info = data.get_vote(title, ctx.guild_id)
             if str(ctx.origin_message_id) in vote_info['vote_msgs']:
                 if vote_info['closed']:
-                    raise PermissionError
+                    raise PermissionError('vote', '投票失敗，投票「{title}」已經結束了！')
 
                 if str(ctx.author_id) in vote_info['voted']:
                     for i in vote_info['voted'][str(ctx.author_id)]:
@@ -481,10 +494,9 @@ class Vote(commands.Cog):
                 await ctx.send(content=f"投票成功！\n你投給了：{', '.join([ vote_info['options'][int(i)]['name'] for i in ctx.selected_options ])}", hidden=True)
                 break
         else:
-            raise KeyError
+            raise KeyError('vote', f'投票失敗，投票「{title}」並不存在!')
 
 def make_embed(title:str, vote_info:dict) -> discord.Embed:
-
     date_text = ''
     if vote_info['closed']:
         if vote_info['forced']:
