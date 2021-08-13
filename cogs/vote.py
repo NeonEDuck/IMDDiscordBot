@@ -515,9 +515,11 @@ def make_embed(title:str, vote_info:dict) -> discord.Embed:
     )
     embed.set_author(name='投票')
     for i, opt in enumerate(vote_info['options']):
-        value = f"票數：{opt['votes']:3}" + (f'\n{date_text}' if i == len(vote_info['options'])-1 else '')
+        value = f"票數：{opt['votes']:3}"
         if vote_info['show_members']:
             value += '\n' + ' '.join([ f'<@{member_id}>' for member_id, votes in vote_info['voted'].items() if str(i) in votes ])
+        if i == len(vote_info['options'])-1:
+            value += f'\n{date_text}'
 
         embed.add_field(name=opt['name'], value=value, inline=False)
     embed.set_footer(text='≡'*43 + '\n' + ('投票已結束' if vote_info['closed'] else '點擊下面選單以投票'))

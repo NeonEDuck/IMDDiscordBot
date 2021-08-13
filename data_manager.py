@@ -19,7 +19,7 @@ class DataManager:
         def get_vote(self, title:str, guild_id:Union[str, int]) -> Dict[str, Any]:
             if type(guild_id) == int:
                 guild_id = str(guild_id)
-            return json.loads(db[f'vote_{guild_id}_{title}']) if f'vote_{title}' in db else None
+            return json.loads(db[f'vote_{guild_id}_{title}']) if f'vote_{guild_id}_{title}' in db else None
 
         @classmethod
         def set_vote(self, title:str, vote_info: Dict[str, Any], guild_id:Union[str, int]):
