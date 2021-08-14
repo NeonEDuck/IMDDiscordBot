@@ -3,6 +3,7 @@ from flask import Flask, jsonify
 import discord
 from discord.ext import commands
 from discord_slash import SlashCommand
+from discord_slash.context import SlashContext, ComponentContext
 from variable import TOKEN
 import error_handler
 import app
@@ -14,7 +15,7 @@ slash = SlashCommand(bot, sync_commands=True)
 extensions = ['cogs.vote']
 
 @slash.slash(name='ping')
-async def _ping(ctx):
+async def _ping(ctx:SlashContext):
     await ctx.send(f'Pong! ({bot.latency*1000}ms)', hidden=True)
 
 if __name__ == '__main__':
