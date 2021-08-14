@@ -12,7 +12,7 @@ intents = discord.Intents.default()
 intents.members = True
 bot = commands.Bot(intents=intents, command_prefix='imd/')
 slash = SlashCommand(bot, sync_commands=True)
-extensions = ['cogs.vote']
+extensions = ['cogs.vote', 'cogs.permission']
 
 @slash.slash(name='ping')
 async def _ping(ctx:SlashContext):

@@ -31,6 +31,7 @@ class Vote(commands.Cog):
         'base': 'vote',
         'name': 'add',
         'description': '新增一個投票。',
+        'base_default_permission': False,
         'options': [
             create_option(
                 name='title',
@@ -437,7 +438,7 @@ class Vote(commands.Cog):
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
-    async def vote_update(self, ctx:Union[SlashContext, ComponentContext], title:str, guild_id:Union[str, int]) -> None:
+    async def vote_update(self, ctx:Union[commands.Bot, SlashContext, ComponentContext], title:str, guild_id:Union[str, int]) -> None:
         vote_info:dict = data.get_vote(title, guild_id)
 
         if vote_info:
