@@ -14,6 +14,11 @@ class Vote(commands.Cog):
         self.bot = bot
         self.vote_closer.start()
 
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild) -> None:
+        for title in data.vote_keys(guild.id):
+            data.delete_vote(title, guild.id)
+
     @tasks.loop(seconds=1.0)
     async def vote_closer(self) -> None:
         if self.bot.is_ready():
