@@ -128,9 +128,12 @@ class Vote(commands.Cog):
 
         if vote_info:
             for msg_id in vote_info['vote_msgs']:
-                msg = await ctx.channel.fetch_message(msg_id)
-                if msg:
-                    await msg.delete()
+                try:
+                    msg = await ctx.channel.fetch_message(msg_id)
+                    if msg:
+                        await msg.delete()
+                except:
+                    pass
 
             data.delete_vote(title, ctx.guild_id)
             await ctx.send(f'以成功將投票「{title}」刪除!', hidden=True)
