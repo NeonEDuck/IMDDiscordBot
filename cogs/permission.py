@@ -6,7 +6,8 @@ from discord_slash.utils.manage_commands import (
     get_guild_command_permissions,
     update_single_command_permissions,
     generate_permissions,
-    create_option
+    create_option,
+    create_choice
 )
 from discord_slash.context import SlashContext
 from typing import Union, List, Tuple, Dict, Any
@@ -28,7 +29,6 @@ class Permission(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_remove(self, guild) -> None:
         data.delete_permission(guild.id)
-        await self.update_permission(guild=guild)
 
     permission_edit_kwargs = {
         'base': 'permission',
@@ -43,7 +43,7 @@ class Permission(commands.Cog):
                 required=True
             ),
             create_option(
-                name='command',
+                name='base_command',
                 description='指令名稱。(只能設定父指令的權限，如"/vote add"，只能設定父指令/vote，而子指令/vote add會隨之套用)',
                 option_type=3,
                 required=True
@@ -51,40 +51,54 @@ class Permission(commands.Cog):
             create_option(
                 name='allow',
                 description='是否給予權限。',
-                option_type=5,
-                required=True
+                option_type=3,
+                required=True,
+                choices=[
+                    create_choice(
+                        name='True',
+                        value='true'
+                    ),
+                    create_choice(
+                        name='False',
+                        value='false'
+                    ),
+                    create_choice(
+                        name='Default',
+                        value='default'
+                    )
+                ]
             )
         ]
     }
     @cog_ext.cog_subcommand(**permission_edit_kwargs)
-    async def _permission_edit(self, ctx:SlashContext, command:str, role:discord.role.Role, allow:bool) -> None:
-        command = command.split(' ')[0].strip('/')
+    async def _permission_edit(self, ctx:SlashContext, base_command:str, role:discord.role.Role, allow:str) -> None:
+        base_command = base_command.split(' ')[0].strip('/')
         result:List[dict] = await get_all_commands(self.bot.user.id, TOKEN)
 
-        command_id = next((item['id'] for item in result if item['name'] == command), None)
+        command_id, default_permission = next(((item['id'], item['default_permission']) for item in result if item['name'] == base_command), (None, None))
 
         if command_id is None:
-            raise KeyError('permission', f'/{command}指令不存在')
+            raise KeyError('permission', f'/{base_command}指令不存在')
 
         perm_info = data.get_permission(ctx.guild_id) or {}
 
         perm_info[command_id] = perm_info.get(command_id, [])
-        
-        if allow:
-            if str(role.id) not in perm_info[command_id]:
-                perm_info[command_id].append(str(role.id))
-        else:
+
+        if allow == 'default' or default_permission == (allow == 'true'):
             if str(role.id) in perm_info[command_id]:
                 perm_info[command_id].remove(str(role.id))
+        else:
+            if str(role.id) not in perm_info[command_id]:
+                perm_info[command_id].append(str(role.id))
 
         data.set_permission(perm_info, ctx.guild_id)
 
         try:
-            await self.update_permission(command_id=command_id, guild=ctx.guild)
+            await self.update_permission(command=(command_id, default_permission), guild=ctx.guild)
         except:
-            raise KeyError('permission', f'/{command}指令不存在')
+            raise KeyError('permission', f'/{base_command}指令不存在')
 
-        await ctx.send(content=f"已更新/{command}指令的權限", hidden=True)
+        await ctx.send(content=f"已更新/{base_command}指令的權限", hidden=True)
 
     permission_get_kwargs = {
         'base': 'permission',
@@ -101,18 +115,19 @@ class Permission(commands.Cog):
 
         await ctx.send(embed=embed, hidden=True)
 
-    async def update_permission(self, command:str=None, command_id:Union[str, int]=None, guild=None):
-        if not command_id:
+    async def update_permission(self, command:Tuple[Union[str, int], bool]=None, guild=None):
+        if not command:
             result:List[dict] = await get_all_commands(self.bot.user.id, TOKEN)
 
-            command_ids = [ item['id'] for item in result if not command or item['name'] == command ]
+            command_list = [ (item['id'], item['default_permission']) for item in result if not command or item['name'] == command ]
         else:
-            command_ids = [command_id]
+            command_list = [command]
+
         
-        if command_ids:
+        if command_list:
             guilds = [guild] if guild else [guild for guild in self.bot.guilds]
             for guild in guilds:
-                for command_id in command_ids:
+                for command_id, default_permission in command_list:
                     perm_info = data.get_permission(guild.id) or {}
                     await update_single_command_permissions(
                         self.bot.user.id,
@@ -120,8 +135,9 @@ class Permission(commands.Cog):
                         guild.id,
                         command_id,
                         generate_permissions(
-                            [int(role_id) for role_id in perm_info.get(command_id, [])],
-                            [guild.owner.id]
+                            [int(role_id) for role_id in perm_info.get(command_id, []) if not default_permission],
+                            [guild.owner.id],
+                            [int(role_id) for role_id in perm_info.get(command_id, []) if default_permission]
                         )
                     )
         else:
