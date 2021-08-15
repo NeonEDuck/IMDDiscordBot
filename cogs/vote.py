@@ -411,14 +411,14 @@ class Vote(commands.Cog):
                     continue
                 break
             else:
-                raise KeyError('vote', f'投票「{title}」並不存在!')
+                raise KeyError('vote', f'投票「{title}」沒有投票訊息!請使用 `/vote repost` 讓機器人再重新傳送一個投票訊息。')
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
     vote_notify_kwargs = {
         'base': 'vote',
         'name': 'notify',
-        'description': '列出還沒有投票的成員',
+        'description': '列出還沒有投票的成員。',
         'options': [
             create_option(
                 name='title',
@@ -447,6 +447,30 @@ class Vote(commands.Cog):
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
+    vote_notify_kwargs = {
+        'base': 'vote',
+        'name': 'repost',
+        'description': '重新傳送一個投票訊息。',
+        'options': [
+            create_option(
+                name='title',
+                description='投票標題。',
+                option_type=3,
+                required=True
+            )
+        ]
+    }
+    @cog_ext.cog_subcommand(**vote_notify_kwargs)
+    async def _vote_notify(self, ctx:SlashContext, title:str) -> None:
+        vote_info:dict = data.get_vote(title, ctx.guild_id)
+
+        if vote_info:
+            vote_msg = await ctx.send(embed=make_embed(title, vote_info), components=[make_select(title, vote_info)])
+            vote_info['vote_msgs'].append(str(vote_msg.id))
+            data.set_vote(title, vote_info, ctx.guild_id)
+        else:
+            raise KeyError('vote', f'投票「{title}」並不存在!')
+
     async def vote_update(self, ctx:Union[commands.Bot, SlashContext, ComponentContext], title:str, guild_id:Union[str, int]) -> None:
         vote_info:dict = data.get_vote(title, guild_id)
 
@@ -454,38 +478,45 @@ class Vote(commands.Cog):
             embed = make_embed(title, vote_info)
             select = make_select(title, vote_info)
 
-            if ctx is None or type(ctx) == commands.Bot:
-                # search in guilds
+            if type(ctx) == commands.Bot:
+                # search in guild
 
                 tmp_msg_id_list:List[str] = vote_info['vote_msgs']
-                for guild in ctx.guilds:
-                    for channel in await guild.fetch_channels():
-                        if not tmp_msg_id_list:
-                            break
-                        edited_msg_id_list:List[str] = []
-                        for msg_id in tmp_msg_id_list:
-                            try:
-                                msg = await channel.fetch_message(msg_id)
-                                await msg.edit(embed=embed, components=[select])
-                                edited_msg_id_list.append(msg_id)
-                            except:
-                                pass
-                        tmp_msg_id_list = [ msg_id for msg_id in tmp_msg_id_list if msg_id not in edited_msg_id_list ]
-                    else:
-                        continue
-                    break
+                guild = await ctx.fetch_guild(guild_id)
+
+                for channel in await guild.fetch_channels():
+                    if not tmp_msg_id_list:
+                        break
+                    edited_msg_id_list:List[str] = []
+                    for msg_id in tmp_msg_id_list:
+                        try:
+                            msg = await channel.fetch_message(msg_id)
+                            await msg.edit(embed=embed, components=[select])
+                            edited_msg_id_list.append(msg_id)
+                        except:
+                            pass
+                    tmp_msg_id_list = [ msg_id for msg_id in tmp_msg_id_list if msg_id not in edited_msg_id_list ]
+
+                for msg_id in tmp_msg_id_list:
+                    vote_info['vote_msgs'].remove(msg_id)
+                    data.set_vote(title, vote_info, guild_id)
+
             else:
                 # search in channel
 
                 if type(ctx) == ComponentContext:
                     ctx = ctx.origin_message
 
+                delete_msgs=[]
                 for msg_id in vote_info['vote_msgs']:
                     try:
                         msg = await ctx.channel.fetch_message(msg_id)
                         await msg.edit(embed=embed, components=[select])
                     except:
-                        pass
+                        delete_msgs.append(msg_id)
+                for msg_id in delete_msgs:
+                    vote_info['vote_msgs'].remove(msg_id)
+                    data.set_vote(title, vote_info, guild_id)
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
