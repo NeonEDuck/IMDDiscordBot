@@ -72,7 +72,7 @@ class Permission(commands.Cog):
     }
     @cog_ext.cog_subcommand(**permission_edit_kwargs)
     async def _permission_edit(self, ctx:SlashContext, base_command:str, role:discord.role.Role, allow:str) -> None:
-        base_command = base_command.split(' ')[0].strip('/')
+        base_command = base_command.strip().split(' ')[0].strip('/')
         result:List[dict] = await get_all_commands(self.bot.user.id, TOKEN)
 
         command_id, default_permission = next(((item['id'], item['default_permission']) for item in result if item['name'] == base_command), (None, None))
