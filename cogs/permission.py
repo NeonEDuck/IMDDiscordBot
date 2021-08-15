@@ -14,7 +14,7 @@ from variable import TOKEN
 from data_manager import DataManager as data
 
 class Permission(commands.Cog):
-    def __init__(self, bot) -> None:
+    def __init__(self, bot:commands.Bot) -> None:
         self.bot = bot
 
     @commands.Cog.listener()
@@ -127,5 +127,5 @@ class Permission(commands.Cog):
         else:
             raise KeyError
 
-def setup(bot) -> None:
+def setup(bot:commands.Bot) -> None:
     bot.add_cog( Permission(bot) )

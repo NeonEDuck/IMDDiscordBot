@@ -6,10 +6,11 @@ from discord_slash.utils.manage_components import create_select, create_select_o
 from discord_slash.context import SlashContext, ComponentContext
 from typing import Union, List, Tuple, Dict, Any
 from datetime import datetime, timedelta
+from utils import get_bit_positions
 from data_manager import DataManager as data
 
 class Vote(commands.Cog):
-    def __init__(self, bot) -> None:
+    def __init__(self, bot:commands.Bot) -> None:
         self.bot = bot
         self.vote_closer.start()
 
@@ -86,13 +87,13 @@ class Vote(commands.Cog):
                 raise ValueError('vote', 'max_votes必須為大於等於1的值')
 
             vote_info:dict = {
-                'options': [{"name": x.strip(), "votes": 0} for x in options.split('|')],
+                'options': [x.strip() for x in options.split('|')],
                 'close_date': close_date,
                 'max_votes': max_votes,
                 'show_members': show_members,
-                'voted': {},
                 'closed': False,
-                'forced': False
+                'forced': False,
+                'voted': {}
             }
 
             select = make_select(title, vote_info)
@@ -194,9 +195,9 @@ class Vote(commands.Cog):
                     raise ValueError('vote', 'options格式錯誤。(格式：0:選項A|2:選項C)')
                 for i, name in options_list:
                     if i >= len(vote_info['options']):
-                        vote_info['options'].append({ "name": name, "votes": 0 })
+                        vote_info['options'].append(name)
                     else:
-                        vote_info['options'][i]['name'] = name
+                        vote_info['options'][i] = name
             if close_date is not None:
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
@@ -355,12 +356,12 @@ class Vote(commands.Cog):
             embed=discord.Embed(title=f'「{title}」', color=0x07A0C3)
             embed.set_author(name='投票結果')
             for i, opt in enumerate(vote_info['options']):
-                voted_members:List[str] = [member_id for member_id in vote_info['voted'].keys() if str(i) in vote_info['voted'][member_id]]
+                voted_members:List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
 
                 if not voted_members:
                     continue
                 
-                embed.add_field(name=opt['name'], value=' '.join([f'<@{member_id}>' for member_id in voted_members]), inline=False)
+                embed.add_field(name=opt, value=' '.join([f'<@{member_id}>' for member_id in voted_members]), inline=False)
 
             await ctx.send(embed=embed, hidden=True)
         else:
@@ -489,18 +490,11 @@ class Vote(commands.Cog):
                 if vote_info['closed']:
                     raise PermissionError('vote', '投票失敗，投票「{title}」已經結束了！')
 
-                if str(ctx.author_id) in vote_info['voted']:
-                    for i in vote_info['voted'][str(ctx.author_id)]:
-                        vote_info['options'][int(i)]["votes"] -= 1
-
-                vote_info['voted'][str(ctx.author_id)] = ctx.selected_options
-                
-                for i in vote_info['voted'][str(ctx.author_id)]:
-                    vote_info['options'][int(i)]["votes"] += 1
+                vote_info['voted'][str(ctx.author_id)] = sum(2**int(i) for i in ctx.selected_options)
 
                 data.set_vote(title, vote_info, ctx.guild_id)
                 await self.vote_update(ctx, title, ctx.guild_id)
-                await ctx.send(content=f"投票成功！\n你投給了：{', '.join([ vote_info['options'][int(i)]['name'] for i in ctx.selected_options ])}", hidden=True)
+                await ctx.send(content=f"投票成功！\n你投給了：{', '.join([ vote_info['options'][int(i)] for i in ctx.selected_options ])}", hidden=True)
                 break
         else:
             raise KeyError('vote', f'投票失敗，投票「{title}」並不存在!')
@@ -536,19 +530,20 @@ def make_embed(title:str, vote_info:dict) -> discord.Embed:
     )
     embed.set_author(name='投票')
     for i, opt in enumerate(vote_info['options']):
-        value = f"票數：{opt['votes']:3}"
+        voted_members:List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
+        value = f"票數：{len(voted_members):3}"
         if vote_info['show_members']:
-            value += '\n' + ' '.join([ f'<@{member_id}>' for member_id, votes in vote_info['voted'].items() if str(i) in votes ])
+            value += '\n' + ' '.join([ f'<@{member_id}>' for member_id in voted_members ])
         if i == len(vote_info['options'])-1:
             value += f'\n{date_text}'
 
-        embed.add_field(name=opt['name'], value=value, inline=False)
+        embed.add_field(name=opt, value=value, inline=False)
     embed.set_footer(text='≡'*43 + '\n' + ('投票已結束' if vote_info['closed'] else '點擊下面選單以投票'))
     return embed
 
 def make_select(title:str, vote_info:dict) -> dict:
     select = create_actionrow(create_select(
-        options=[create_select_option(opt['name'], value=str(i)) for i, opt in enumerate(vote_info['options'])],
+        options=[create_select_option(opt, value=str(i)) for i, opt in enumerate(vote_info['options'])],
         custom_id='vote_select',
         placeholder='選擇1個選項' if vote_info['max_votes'] == 1 else f"選擇最多{vote_info['max_votes']}個選項",
         min_values=1,
@@ -557,5 +552,5 @@ def make_select(title:str, vote_info:dict) -> dict:
     ))
     return select
 
-def setup(bot) -> None:
+def setup(bot:commands.Bot) -> None:
     bot.add_cog( Vote(bot) )

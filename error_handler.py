@@ -1,10 +1,8 @@
-import discord
+from discord.ext import commands
 from discord_slash.context import SlashContext, ComponentContext
-import json
-from data_manager import DataManager as data
 import traceback
 
-def setup(bot):
+def setup(bot:commands.Bot):
     
     @bot.event
     async def on_slash_command_error(ctx:SlashContext, ex:Exception) -> None:

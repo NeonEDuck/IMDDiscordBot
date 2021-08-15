@@ -1,16 +1,15 @@
 from threading import Thread
-from flask import Flask, jsonify
 import discord
 from discord.ext import commands
 from discord_slash import SlashCommand
-from discord_slash.context import SlashContext, ComponentContext
+from discord_slash.context import SlashContext
 from variable import TOKEN
 import error_handler
 import app
 
 intents = discord.Intents.default()
 intents.members = True
-bot = commands.Bot(intents=intents, command_prefix='imd/')
+bot = commands.Bot(intents=intents, command_prefix='nebot:')
 slash = SlashCommand(bot, sync_commands=True)
 extensions = ['cogs.vote', 'cogs.permission']
 
