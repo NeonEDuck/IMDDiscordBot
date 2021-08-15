@@ -80,7 +80,7 @@ class Permission(commands.Cog):
         if command_id is None:
             raise KeyError('permission', f'/{base_command}指令不存在')
 
-        perm_info = data.get_permission(ctx.guild_id) or {}
+        perm_info:dict = data.get_permission(ctx.guild_id) or {}
 
         perm_info[command_id] = perm_info.get(command_id, [])
 
@@ -107,11 +107,12 @@ class Permission(commands.Cog):
     }
     @cog_ext.cog_subcommand(**permission_get_kwargs)
     async def _permission_list(self, ctx:SlashContext) -> None:
-        perm_info = data.get_permission(ctx.guild_id) or {}
-
-        for command, role_ids in perm_info.items():
-            embed = discord.Embed(title='指令權限清單')
-            embed.add_field(name=f'/{command}', value=' '.join([f'<@&{role_id}>' for role_id in role_ids]), inline=False)
+        result:List[dict] = await get_all_commands(self.bot.user.id, TOKEN)
+        perm_info:dict = data.get_permission(ctx.guild_id) or {}
+        embed = discord.Embed(title='指令權限清單')
+        for command_id, role_ids in perm_info.items():
+            command = next((item['name'] for item in result if item['id'] == command_id), None)
+            embed.add_field(name=f'/{command}', value=' '.join([ '@everyone' if role_id == str(ctx.guild_id) else f'<@&{role_id}>' for role_id in role_ids]), inline=False)
 
         await ctx.send(embed=embed, hidden=True)
 
@@ -128,7 +129,7 @@ class Permission(commands.Cog):
             guilds = [guild] if guild else [guild for guild in self.bot.guilds]
             for guild in guilds:
                 for command_id, default_permission in command_list:
-                    perm_info = data.get_permission(guild.id) or {}
+                    perm_info:dict = data.get_permission(guild.id) or {}
                     await update_single_command_permissions(
                         self.bot.user.id,
                         TOKEN,
