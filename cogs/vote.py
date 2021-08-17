@@ -6,7 +6,9 @@ from discord_slash.utils.manage_components import create_select, create_select_o
 from discord_slash.context import SlashContext, ComponentContext
 from typing import Optional, Union, List, Tuple, Dict, Any
 from datetime import datetime, timedelta
-from utils import get_bit_positions
+import asyncio
+from utils import get_bit_positions, utc_plus
+from variable import DATETIME_FORMAT
 from data_manager import DataManager as data
 
 class Vote(commands.Cog):
@@ -19,19 +21,22 @@ class Vote(commands.Cog):
         for title in data.vote_keys(guild.id):
             data.delete_vote(title, guild.id)
 
-    @tasks.loop(seconds=1.0)
+    @tasks.loop(minutes=1.0)
     async def vote_closer(self) -> None:
-        if self.bot.is_ready():
-            for guild_id, title in data.vote_all_keys():
-                vote_info :Dict[str, Any] = data.get_vote(title, guild_id)
-                if vote_info['closed'] or vote_info['close_date'] == None:
-                    continue
+        for guild_id, title in data.vote_all_keys():
+            vote_info :Dict[str, Any] = data.get_vote(title, guild_id)
+            if vote_info['closed'] or vote_info['close_date'] == None:
+                continue
+            if utc_plus(8) >= datetime.strptime(vote_info['close_date'], DATETIME_FORMAT):
+                vote_info['closed'] = True
+                vote_info['forced'] = False
+                data.set_vote(title, vote_info, guild_id)
+                await self.vote_update(self.bot, title, guild_id)
 
-                if (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
-                    vote_info['closed'] = True
-                    vote_info['forced'] = False
-                    data.set_vote(title, vote_info, guild_id)
-                    await self.vote_update(self.bot, title, guild_id)
+    @vote_closer.before_loop
+    async def before_vote_closer(self) -> None:
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(( 60 - (datetime.now().second + datetime.now().microsecond/1_000_000) ) % 60)
     
     vote_add_kwargs = {
         'base': 'vote',
@@ -85,13 +90,18 @@ class Vote(commands.Cog):
         else:
             if close_date:
                 close_date = close_date.strip()
+                tmp_close_date :datetime
                 try:
-                    datetime.strptime(close_date, '%Y/%m/%d %H:%M')
+                    tmp_close_date = datetime.strptime(close_date, DATETIME_FORMAT)
+                    close_date = tmp_close_date.strftime(DATETIME_FORMAT)
                 except:
                     raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
 
+                if tmp_close_date <= utc_plus(8):
+                    raise ValueError('vote', f'{close_date}已經過去了!')
+
             if max_votes <= 0:
-                raise ValueError('vote', 'max_votes必須為大於等於1的值')
+                raise ValueError('vote', 'max_votes必須為大於等於1的值。')
 
             vote_info = {
                 'options': [x.strip() for x in options.split('|')],
@@ -212,16 +222,21 @@ class Vote(commands.Cog):
                         vote_info['options'][i] = name
             if close_date is not None:
                 close_date  = close_date.strip()
+                tmp_close_date :datetime
                 try:
-                    datetime.strptime(close_date, '%Y/%m/%d %H:%M')
+                    tmp_close_date = datetime.strptime(close_date, DATETIME_FORMAT)
+                    close_date = tmp_close_date.strftime(DATETIME_FORMAT)
                 except:
                     raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
+
+                if tmp_close_date <= utc_plus(8):
+                    raise ValueError('vote', f'{close_date}已經過去了!')
                 vote_info['close_date'] = close_date
             if max_votes is not None:
                 if max_votes > 0:
                     vote_info['max_votes'] = max_votes
                 else:
-                    raise ValueError('vote', 'max_votes必須為大於等於1的值')
+                    raise ValueError('vote', 'max_votes必須為大於等於1的值。')
             if show_members is not None:
                 vote_info['show_members'] = show_members
 
@@ -299,12 +314,17 @@ class Vote(commands.Cog):
             vote_info['forced'] = True
             if close_date:
                 close_date = close_date.strip()
+                tmp_close_date :datetime
                 try:
-                    datetime.strptime(close_date, '%Y/%m/%d %H:%M')
+                    tmp_close_date = datetime.strptime(close_date, DATETIME_FORMAT)
+                    close_date = tmp_close_date.strftime(DATETIME_FORMAT)
                 except:
                     raise ValueError('vote', 'close_date格式錯誤。(格式：YYYY/MM/DD HH:MM)')
+
+                if tmp_close_date <= utc_plus(8):
+                    raise ValueError('vote', f'{close_date}已經過去了!')
                 vote_info['close_date'] = close_date
-            elif vote_info['close_date'] and (datetime.utcnow()+timedelta(hours=8)) > datetime.strptime(vote_info['close_date'], '%Y/%m/%d %H:%M'):
+            elif vote_info['close_date'] and utc_plus(8) >= datetime.strptime(vote_info['close_date'], DATETIME_FORMAT):
                 vote_info['close_date'] = None
 
             data.set_vote(title, vote_info, ctx.guild_id)
