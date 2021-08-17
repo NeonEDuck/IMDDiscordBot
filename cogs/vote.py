@@ -4,18 +4,18 @@ from discord_slash import cog_ext
 from discord_slash.utils.manage_commands import create_option, create_choice
 from discord_slash.utils.manage_components import create_select, create_select_option, create_actionrow
 from discord_slash.context import SlashContext, ComponentContext
-from typing import Union, List, Tuple, Dict, Any
+from typing import Optional, Union, List, Tuple, Dict, Any
 from datetime import datetime, timedelta
 from utils import get_bit_positions
 from data_manager import DataManager as data
 
 class Vote(commands.Cog):
-    def __init__(self, bot:commands.Bot) -> None:
+    def __init__(self, bot :commands.Bot) -> None:
         self.bot = bot
         self.vote_closer.start()
 
     @commands.Cog.listener()
-    async def on_guild_remove(self, guild) -> None:
+    async def on_guild_remove(self, guild :discord.Guild) -> None:
         for title in data.vote_keys(guild.id):
             data.delete_vote(title, guild.id)
 
@@ -23,7 +23,7 @@ class Vote(commands.Cog):
     async def vote_closer(self) -> None:
         if self.bot.is_ready():
             for guild_id, title in data.vote_all_keys():
-                vote_info:dict = data.get_vote(title, guild_id)
+                vote_info :Dict[str, Any] = data.get_vote(title, guild_id)
                 if vote_info['closed'] or vote_info['close_date'] == None:
                     continue
 
@@ -72,19 +72,19 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_add_kwargs)
-    async def _vote_add(self, ctx:SlashContext, title:str, options:str, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        title:str           = title.strip()
-        options:str         = options.strip()
-        close_date:str      = kwargs.get('close_date', '').strip() or None
-        max_votes:int       = kwargs.get('max_votes', 1)
-        show_members:bool   = kwargs.get('show_members', False)
+    async def _vote_add(self, ctx :SlashContext, title :str, options :str,
+                        close_date :Optional[str]=None, max_votes :int=1,
+                        show_members :bool=False) -> None:
+        title       = title.strip()
+        options     = options.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             raise ValueError('vote', f'投票「{title}」」已經存在!')
         else:
             if close_date:
+                close_date = close_date.strip()
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
                 except:
@@ -93,7 +93,7 @@ class Vote(commands.Cog):
             if max_votes <= 0:
                 raise ValueError('vote', 'max_votes必須為大於等於1的值')
 
-            vote_info:dict = {
+            vote_info = {
                 'options': [x.strip() for x in options.split('|')],
                 'close_date': close_date,
                 'max_votes': max_votes,
@@ -125,10 +125,10 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_remove_kwargs)
-    async def _vote_remove(self, ctx:SlashContext, title:str) -> None:
-        title:str = title.strip()
+    async def _vote_remove(self, ctx :SlashContext, title :str) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             for msg_id in vote_info['vote_msgs']:
@@ -188,22 +188,21 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_edit_kwargs)
-    async def _vote_edit(self, ctx:SlashContext, title:str, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        title:str           = title.strip()
-        new_title:str       = kwargs.get('new_title',   '').strip() or None
-        options:str         = kwargs.get('options',     '').strip() or None
-        close_date:str      = kwargs.get('close_date',  '').strip() or None
-        max_votes:int       = kwargs.get('max_votes')
-        show_members:bool   = kwargs.get('show_members')
+    async def _vote_edit(self, ctx :SlashContext, title :str,
+                         new_title :Optional[str]=None, options :Optional[str]=None,
+                         close_date :Optional[str]=None, max_votes :Optional[int]=None,
+                         show_members :Optional[bool]=None) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if not vote_info:
             raise KeyError('vote', f'投票「{title}」並不存在!')
         else:
             if options is not None:
+                options = options.strip()
                 try:
-                    options_list:List[Tuple[int, str]] = sorted([(int(i), name) for i, name in [opt.split(':') for opt in options.split('|')]], key=lambda x:x[0])
+                    options_list :List[Tuple[int, str]] = sorted([(int(i), name) for i, name in [opt.split(':') for opt in options.split('|')]], key=lambda x :x[0])
                 except Exception as ex:
                     raise ValueError('vote', 'options格式錯誤。(格式：0:選項A|2:選項C)')
                 for i, name in options_list:
@@ -212,6 +211,7 @@ class Vote(commands.Cog):
                     else:
                         vote_info['options'][i] = name
             if close_date is not None:
+                close_date  = close_date.strip()
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
                 except:
@@ -226,6 +226,7 @@ class Vote(commands.Cog):
                 vote_info['show_members'] = show_members
 
             if new_title is not None:
+                new_title = new_title.strip()
                 if not new_title:
                     raise ValueError('vote', 'new_title不得為空值')
                 if data.get_vote(new_title, ctx.guild_id):
@@ -253,10 +254,10 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_close_kwargs)
-    async def _vote_close(self, ctx:SlashContext, title:str) -> None:
-        title:str = title.strip()
+    async def _vote_close(self, ctx :SlashContext, title :str) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             vote_info['closed'] = True
@@ -288,16 +289,16 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_open_kwargs)
-    async def _vote_open(self, ctx:SlashContext, title:str, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        title:str       = title.strip()
-        close_date:str  = kwargs.get('close_date', '').strip() or None
+    async def _vote_open(self, ctx :SlashContext, title :str, close_date :Optional[str]=None) -> None:
+        title       = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             vote_info['closed'] = False
             vote_info['forced'] = True
             if close_date:
+                close_date = close_date.strip()
                 try:
                     datetime.strptime(close_date, '%Y/%m/%d %H:%M')
                 except:
@@ -341,12 +342,10 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_show_list_kwargs)
-    async def _vote_show_list(self, ctx:SlashContext, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        state:str  = kwargs.get('state', 'all').strip()
-
-        matchs:List[str] = []
+    async def _vote_show_list(self, ctx :SlashContext, state :str='all') -> None:
+        matchs :List[str] = []
         for title in data.vote_keys(ctx.guild_id):
-            vote_info:dict = data.get_vote(title, ctx.guild_id)
+            vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
             if (vote_info['closed'] and state == 'open') or (not vote_info['closed'] and state == 'close'):
                 continue
             
@@ -369,16 +368,16 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_show_result_kwargs)
-    async def _vote_show_result(self, ctx:SlashContext, title:str) -> None:
-        title:str       = title.strip()
+    async def _vote_show_result(self, ctx :SlashContext, title :str) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             embed=discord.Embed(title=f'「{title}」', color=0x07A0C3)
             embed.set_author(name='投票結果')
             for i, opt in enumerate(vote_info['options']):
-                voted_members:List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
+                voted_members :List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
 
                 if not voted_members:
                     continue
@@ -409,11 +408,10 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_jumpto_kwargs)
-    async def _vote_jumpto(self, ctx:SlashContext, title:str, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        title:str   = title.strip()
-        public:str  = kwargs.get('public', False)
+    async def _vote_jumpto(self, ctx :SlashContext, title :str, public :bool=False) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             for channel in await ctx.guild.fetch_channels():
@@ -452,14 +450,13 @@ class Vote(commands.Cog):
         ]
     }
     @cog_ext.cog_subcommand(**vote_notify_kwargs)
-    async def _vote_notify(self, ctx:SlashContext, title:str, **kwargs:Dict[str, Union[str, int, bool]]) -> None:
-        title:str   = title.strip()
-        public:str  = kwargs.get('public', False)
+    async def _vote_notify(self, ctx :SlashContext, title :str, public : bool=False) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
-            member_ids:str = ' '.join([ f'<@{member.id}>' for member in ctx.guild.members if str(member.id) not in vote_info['voted'] and member != self.bot.user ])
+            member_ids :str = ' '.join([ f'<@{member.id}>' for member in ctx.guild.members if str(member.id) not in vote_info['voted'] and member != self.bot.user ])
             if member_ids:
                 await ctx.send(f'還沒有投「{title}」的成員有：\n{member_ids}', hidden=not public)
             else:
@@ -467,7 +464,7 @@ class Vote(commands.Cog):
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
-    vote_notify_kwargs = {
+    vote_repost_kwargs = {
         'base': 'vote',
         'name': 'repost',
         'description': '重新傳送一個投票訊息。',
@@ -480,11 +477,11 @@ class Vote(commands.Cog):
             )
         ]
     }
-    @cog_ext.cog_subcommand(**vote_notify_kwargs)
-    async def _vote_notify(self, ctx:SlashContext, title:str) -> None:
-        title:str   = title.strip()
+    @cog_ext.cog_subcommand(**vote_repost_kwargs)
+    async def _vote_repost(self, ctx :SlashContext, title :str) -> None:
+        title = title.strip()
 
-        vote_info:dict = data.get_vote(title, ctx.guild_id)
+        vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
 
         if vote_info:
             vote_msg = await ctx.send(embed=make_embed(title, vote_info), components=[make_select(title, vote_info)])
@@ -493,8 +490,8 @@ class Vote(commands.Cog):
         else:
             raise KeyError('vote', f'投票「{title}」並不存在!')
 
-    async def vote_update(self, ctx:Union[commands.Bot, SlashContext, ComponentContext], title:str, guild_id:Union[str, int]) -> None:
-        vote_info:dict = data.get_vote(title, guild_id)
+    async def vote_update(self, ctx :Union[commands.Bot, SlashContext, ComponentContext], title :str, guild_id :Union[str, int]) -> None:
+        vote_info :Dict[str, Any] = data.get_vote(title, guild_id)
 
         if vote_info:
             embed = make_embed(title, vote_info)
@@ -503,13 +500,13 @@ class Vote(commands.Cog):
             if isinstance(ctx, commands.Bot):
                 # search in guild
 
-                tmp_msg_id_list:List[str] = vote_info['vote_msgs']
+                tmp_msg_id_list :List[str] = vote_info['vote_msgs']
                 guild = await ctx.fetch_guild(guild_id)
 
                 for channel in await guild.fetch_channels():
                     if not tmp_msg_id_list:
                         break
-                    edited_msg_id_list:List[str] = []
+                    edited_msg_id_list :List[str] = []
                     for msg_id in tmp_msg_id_list:
                         try:
                             msg = await channel.fetch_message(msg_id)
@@ -544,9 +541,9 @@ class Vote(commands.Cog):
 
 
     @cog_ext.cog_component()
-    async def vote_select(self, ctx:ComponentContext) -> None:
+    async def vote_select(self, ctx :ComponentContext) -> None:
         for title in data.vote_keys(ctx.guild_id):
-            vote_info:dict = data.get_vote(title, ctx.guild_id)
+            vote_info :Dict[str, Any] = data.get_vote(title, ctx.guild_id)
             if str(ctx.origin_message_id) in vote_info['vote_msgs']:
                 if vote_info['closed']:
                     raise PermissionError('vote', '投票失敗，投票「{title}」已經結束了！')
@@ -560,8 +557,8 @@ class Vote(commands.Cog):
         else:
             raise KeyError('vote', f'投票失敗，投票「{title}」並不存在!')
 
-def make_embed(title:str, vote_info:dict) -> discord.Embed:
-    date_text = ''
+def make_embed(title :str, vote_info :Dict[str, Any]) -> discord.Embed:
+    date_text :str = ''
     if vote_info['closed']:
         if vote_info['forced']:
             if vote_info['close_date']:
@@ -591,7 +588,7 @@ def make_embed(title:str, vote_info:dict) -> discord.Embed:
     )
     embed.set_author(name='投票')
     for i, opt in enumerate(vote_info['options']):
-        voted_members:List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
+        voted_members :List[str] = [ member_id for member_id, votes in vote_info['voted'].items() if 2**i in get_bit_positions(votes) ]
         value = f"票數：{len(voted_members):3}"
         if vote_info['show_members']:
             value += '\n' + ' '.join([ f'<@{member_id}>' for member_id in voted_members ])
@@ -602,7 +599,7 @@ def make_embed(title:str, vote_info:dict) -> discord.Embed:
     embed.set_footer(text='≡'*43 + '\n' + ('投票已結束' if vote_info['closed'] else '點擊下面選單以投票'))
     return embed
 
-def make_select(title:str, vote_info:dict) -> dict:
+def make_select(title :str, vote_info :Dict[str, Any]) -> Dict[str, Any]:
     select = create_actionrow(create_select(
         options=[create_select_option(opt, value=str(i)) for i, opt in enumerate(vote_info['options'])],
         custom_id='vote_select',
@@ -613,5 +610,5 @@ def make_select(title:str, vote_info:dict) -> dict:
     ))
     return select
 
-def setup(bot:commands.Bot) -> None:
+def setup(bot :commands.Bot) -> None:
     bot.add_cog( Vote(bot) )
